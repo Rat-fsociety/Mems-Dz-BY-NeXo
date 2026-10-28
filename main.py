@@ -10,7 +10,7 @@ import os
 # ═══════════════════════════════════════════
 # ⚙️ CONFIG - Edit these
 # ═══════════════════════════════════════════
-BOT_TOKEN = "MTU2NDA2NTI2MjM0MzQyNjE3OA.GWwkdO.Pq5qGimqAZcFogN0HSSM63O8kcpjs0FUwtf984"
+BOT_TOKEN = "MTU2NDA2NTI2MjM0MzQyNjE3OA.GgiSOO.avEH2hxFFrHvK-1AdyJn08AoYFRgw3kGC4cxGA"
 YOUR_USER_ID = 1503781167059697679  # ضع ID حسابك هنا
 # هذا السطر يقرأ المنفذ تلقائياً من الاستضافة (Wispbyte) أو يستخدم 5000 محلياً
 PORT = int(os.environ.get("PORT", 5000)) 
